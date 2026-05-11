@@ -66,3 +66,53 @@ export async function removeExpense(id) {
   await db.execute("DELETE FROM items WHERE expense_id = ?", [id]);
   await db.execute("DELETE FROM expenses WHERE id = ?", [id]);
 }
+
+export async function importExpensesFromCSV(rows) {
+  const db = await getDb();
+
+  // Group rows by expense title+date+category (first row of each expense group)
+  const expenses = [];
+  let current = null;
+
+  for (const row of rows) {
+    const [title, category, date, total, itemName, itemAmount, notes] = row;
+
+    if (title) {
+      // New expense
+      current = {
+        title,
+        category,
+        date,
+        amount: parseFloat(total) || 0,
+        notes: notes || "",
+        items: [],
+      };
+      expenses.push(current);
+    }
+
+    // Add item if present
+    if (current && itemName) {
+      current.items.push({
+        name: itemName,
+        amount: parseFloat(itemAmount) || 0,
+      });
+    }
+  }
+
+  // Insert each expense and its items
+  for (const expense of expenses) {
+    const result = await db.execute(
+      "INSERT INTO expenses (title, amount, category, date, notes) VALUES (?, ?, ?, ?, ?)",
+      [expense.title, expense.amount, expense.category, expense.date, expense.notes]
+    );
+    const expenseId = result.lastInsertId;
+    for (const item of expense.items) {
+      await db.execute(
+        "INSERT INTO items (expense_id, name, amount) VALUES (?, ?, ?)",
+        [expenseId, item.name, item.amount]
+      );
+    }
+  }
+
+  return expenses.length;
+}

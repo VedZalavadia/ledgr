@@ -115,7 +115,7 @@ export default function App() {
               <ExpenseForm onAdd={addExpense} onDone={() => setActiveTab("expenses")} expenses={expenses} />
             )}
             {activeTab === "expenses" && (
-              <ExpenseList expenses={expenses} onDelete={deleteExpense} categoryColors={CATEGORY_COLORS} />
+              <ExpenseList expenses={expenses} onDelete={deleteExpense} onImport={loadExpenses} categoryColors={CATEGORY_COLORS} />
             )}
           </>
         )}

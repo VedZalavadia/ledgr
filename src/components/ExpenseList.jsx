@@ -1,5 +1,6 @@
-import { useState } from "react";
-import { Trash2, ChevronDown, ChevronUp, Download } from "lucide-react";
+import { useState, useRef } from "react";
+import { Trash2, ChevronDown, ChevronUp, Download, Upload } from "lucide-react";
+import { importExpensesFromCSV } from "../db";
 
 function exportToCSV(expenses) {
   const rows = [];
@@ -44,15 +45,108 @@ function exportToCSV(expenses) {
   URL.revokeObjectURL(url);
 }
 
-export default function ExpenseList({ expenses, onDelete, categoryColors }) {
+function parseCSV(text) {
+  const lines = text.trim().split("\n");
+  return lines.slice(1).map((line) => {
+    const cols = [];
+    let current = "";
+    let inQuotes = false;
+    for (let i = 0; i < line.length; i++) {
+      const ch = line[i];
+      if (ch === '"') {
+        inQuotes = !inQuotes;
+      } else if (ch === "," && !inQuotes) {
+        cols.push(current.trim());
+        current = "";
+      } else {
+        current += ch;
+      }
+    }
+    cols.push(current.trim());
+    return cols;
+  });
+}
+
+export default function ExpenseList({ expenses, onDelete, onImport, categoryColors }) {
   const [expanded, setExpanded] = useState(null);
+  const [importing, setImporting] = useState(false);
+  const [importMsg, setImportMsg] = useState(null);
+  const fileRef = useRef(null);
+
+  const handleImport = async (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+    setImporting(true);
+    setImportMsg(null);
+    try {
+      const text = await file.text();
+      const rows = parseCSV(text);
+      const count = await importExpensesFromCSV(rows);
+      setImportMsg({ type: "success", text: `Successfully imported ${count} expense${count !== 1 ? "s" : ""}` });
+      onImport();
+    } catch (err) {
+      console.error(err);
+      setImportMsg({ type: "error", text: "Import failed — make sure it's a Ledgr CSV file" });
+    } finally {
+      setImporting(false);
+      e.target.value = "";
+    }
+  };
+
+  const buttonStyle = {
+    display: "flex",
+    alignItems: "center",
+    gap: 6,
+    padding: "6px 14px",
+    background: "#fff",
+    border: "0.5px solid #e8e6e0",
+    borderRadius: 8,
+    cursor: "pointer",
+    fontSize: 12,
+    color: "#888",
+    fontFamily: "Georgia, serif",
+    transition: "all 0.15s ease",
+  };
 
   if (expenses.length === 0) {
     return (
-      <div style={{ textAlign: "center", padding: "100px 0", color: "#ccc" }}>
-        <p style={{ fontSize: 36, marginBottom: 12 }}>💸</p>
-        <p style={{ fontSize: 15, color: "#aaa", fontWeight: 600 }}>No expenses yet</p>
-        <p style={{ fontSize: 13, marginTop: 6, color: "#ccc" }}>Add your first expense to get started</p>
+      <div>
+        {/* Empty state with import button still visible */}
+        <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", marginBottom: 28 }}>
+          <h1 style={{ fontSize: 22, fontWeight: 700, color: "#1a1a1a", letterSpacing: "-0.5px" }}>Expenses</h1>
+          <div style={{ display: "flex", gap: 8 }}>
+            <input ref={fileRef} type="file" accept=".csv" style={{ display: "none" }} onChange={handleImport} />
+            <button
+              style={buttonStyle}
+              onClick={() => fileRef.current.click()}
+              onMouseEnter={(e) => { e.currentTarget.style.borderColor = "#1a1a1a"; e.currentTarget.style.color = "#1a1a1a"; }}
+              onMouseLeave={(e) => { e.currentTarget.style.borderColor = "#e8e6e0"; e.currentTarget.style.color = "#888"; }}
+            >
+              <Upload size={13} />
+              {importing ? "Importing..." : "Import CSV"}
+            </button>
+          </div>
+        </div>
+
+        {importMsg && (
+          <div style={{
+            padding: "10px 16px",
+            borderRadius: 10,
+            fontSize: 12,
+            marginBottom: 20,
+            background: importMsg.type === "success" ? "#f0faf4" : "#fdf2f2",
+            color: importMsg.type === "success" ? "#2e7d52" : "#c0392b",
+            border: `0.5px solid ${importMsg.type === "success" ? "#b6e8cc" : "#f5c0c0"}`,
+          }}>
+            {importMsg.text}
+          </div>
+        )}
+
+        <div style={{ textAlign: "center", padding: "60px 0", color: "#ccc" }}>
+          <p style={{ fontSize: 36, marginBottom: 12 }}>💸</p>
+          <p style={{ fontSize: 15, color: "#aaa", fontWeight: 600 }}>No expenses yet</p>
+          <p style={{ fontSize: 13, marginTop: 6, color: "#ccc" }}>Add your first expense to get started</p>
+        </div>
       </div>
     );
   }
@@ -64,43 +158,53 @@ export default function ExpenseList({ expenses, onDelete, categoryColors }) {
       {/* Header */}
       <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", marginBottom: 28 }}>
         <h1 style={{ fontSize: 22, fontWeight: 700, color: "#1a1a1a", letterSpacing: "-0.5px" }}>Expenses</h1>
-        <div style={{ display: "flex", alignItems: "center", gap: 16 }}>
-          <span style={{ fontSize: 13, color: "#bbb" }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+          <span style={{ fontSize: 13, color: "#bbb", marginRight: 8 }}>
             Total:{" "}
             <span style={{ color: "#1a1a1a", fontWeight: 700, fontFamily: "Georgia, serif", letterSpacing: "-0.5px" }}>
               ${total.toFixed(2)}
             </span>
           </span>
+
+          {/* Import */}
+          <input ref={fileRef} type="file" accept=".csv" style={{ display: "none" }} onChange={handleImport} />
+          <button
+            style={buttonStyle}
+            onClick={() => fileRef.current.click()}
+            onMouseEnter={(e) => { e.currentTarget.style.borderColor = "#1a1a1a"; e.currentTarget.style.color = "#1a1a1a"; }}
+            onMouseLeave={(e) => { e.currentTarget.style.borderColor = "#e8e6e0"; e.currentTarget.style.color = "#888"; }}
+          >
+            <Upload size={13} />
+            {importing ? "Importing..." : "Import CSV"}
+          </button>
+
+          {/* Export */}
           <button
             onClick={() => exportToCSV(expenses)}
-            style={{
-              display: "flex",
-              alignItems: "center",
-              gap: 6,
-              padding: "6px 14px",
-              background: "#fff",
-              border: "0.5px solid #e8e6e0",
-              borderRadius: 8,
-              cursor: "pointer",
-              fontSize: 12,
-              color: "#888",
-              fontFamily: "Georgia, serif",
-              transition: "all 0.15s ease",
-            }}
-            onMouseEnter={(e) => {
-              e.currentTarget.style.borderColor = "#1a1a1a";
-              e.currentTarget.style.color = "#1a1a1a";
-            }}
-            onMouseLeave={(e) => {
-              e.currentTarget.style.borderColor = "#e8e6e0";
-              e.currentTarget.style.color = "#888";
-            }}
+            style={buttonStyle}
+            onMouseEnter={(e) => { e.currentTarget.style.borderColor = "#1a1a1a"; e.currentTarget.style.color = "#1a1a1a"; }}
+            onMouseLeave={(e) => { e.currentTarget.style.borderColor = "#e8e6e0"; e.currentTarget.style.color = "#888"; }}
           >
             <Download size={13} />
             Export CSV
           </button>
         </div>
       </div>
+
+      {/* Import message */}
+      {importMsg && (
+        <div style={{
+          padding: "10px 16px",
+          borderRadius: 10,
+          fontSize: 12,
+          marginBottom: 20,
+          background: importMsg.type === "success" ? "#f0faf4" : "#fdf2f2",
+          color: importMsg.type === "success" ? "#2e7d52" : "#c0392b",
+          border: `0.5px solid ${importMsg.type === "success" ? "#b6e8cc" : "#f5c0c0"}`,
+        }}>
+          {importMsg.text}
+        </div>
+      )}
 
       {/* List */}
       <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
@@ -149,13 +253,11 @@ export default function ExpenseList({ expenses, onDelete, categoryColors }) {
                   <span style={{ fontSize: 14, fontWeight: 700, color: "#1a1a1a", fontFamily: "Georgia, serif", letterSpacing: "-0.5px" }}>
                     ${expense.amount.toFixed(2)}
                   </span>
-
                   {expense.items?.length > 0 && (
                     <span style={{ color: "#ccc" }}>
                       {isExpanded ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
                     </span>
                   )}
-
                   <button
                     onClick={(e) => { e.stopPropagation(); onDelete(expense.id); }}
                     style={{
