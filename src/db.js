@@ -61,6 +61,21 @@ export async function insertExpense(expense, items) {
   }
 }
 
+export async function updateExpense(expense, items) {
+  const db = await getDb();
+  await db.execute(
+    "UPDATE expenses SET title=?, amount=?, category=?, date=?, notes=? WHERE id=?",
+    [expense.title, expense.amount, expense.category, expense.date, expense.notes || "", expense.id]
+  );
+  await db.execute("DELETE FROM items WHERE expense_id=?", [expense.id]);
+  for (const item of items) {
+    await db.execute(
+      "INSERT INTO items (expense_id, name, amount) VALUES (?, ?, ?)",
+      [expense.id, item.name, item.amount]
+    );
+  }
+}
+
 export async function removeExpense(id) {
   const db = await getDb();
   await db.execute("DELETE FROM items WHERE expense_id = ?", [id]);
@@ -69,37 +84,25 @@ export async function removeExpense(id) {
 
 export async function importExpensesFromCSV(rows) {
   const db = await getDb();
-
-  // Group rows by expense title+date+category (first row of each expense group)
   const expenses = [];
   let current = null;
 
   for (const row of rows) {
     const [title, category, date, total, itemName, itemAmount, notes] = row;
-
     if (title) {
-      // New expense
       current = {
-        title,
-        category,
-        date,
+        title, category, date,
         amount: parseFloat(total) || 0,
         notes: notes || "",
         items: [],
       };
       expenses.push(current);
     }
-
-    // Add item if present
     if (current && itemName) {
-      current.items.push({
-        name: itemName,
-        amount: parseFloat(itemAmount) || 0,
-      });
+      current.items.push({ name: itemName, amount: parseFloat(itemAmount) || 0 });
     }
   }
 
-  // Insert each expense and its items
   for (const expense of expenses) {
     const result = await db.execute(
       "INSERT INTO expenses (title, amount, category, date, notes) VALUES (?, ?, ?, ?, ?)",
